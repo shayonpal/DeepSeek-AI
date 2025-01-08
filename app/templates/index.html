@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DeepSeek Chat</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Add Prism.js CSS theme -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
     <style>
         body {
             font-family: 'JetBrains Mono', monospace;
@@ -52,6 +54,49 @@
             background: #0078d4;
             color: white;
         }
+        /* Code block styling */
+        .message-content pre {
+            margin: 0.5em 0;
+            padding: 12px;
+            border-radius: 8px;
+            background: #1e1e1e !important;
+            position: relative;
+            overflow-x: auto;
+        }
+        .message-content code {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            background: #1e1e1e;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        .message-content pre code {
+            padding: 0;
+            background: transparent;
+        }
+        .message.user .message-content code {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        .copy-button {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 4px 8px;
+            background: #3d3d3d;
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 12px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .message-content pre:hover .copy-button {
+            opacity: 1;
+        }
+        .copy-button:hover {
+            background: #4d4d4d;
+        }
         .chat-input {
             padding: 20px;
             border-top: 1px solid #3d3d3d;
@@ -95,16 +140,78 @@
         </div>
     </div>
 
+    <!-- Load libraries in correct order -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+
     <script>
+        // Initialize message history
         let messageHistory = [];
 
+        // Configure marked.js
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (Prism.languages[lang]) {
+                    return Prism.highlight(code, Prism.languages[lang], lang);
+                }
+                return code;
+            },
+            breaks: true,
+            gfm: true
+        });
+
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const button = event.target;
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                }, 2000);
+            });
+        }
+
+        function formatMessage(content) {
+            try {
+                // Convert markdown to HTML using marked
+                let html = marked.parse(content);
+                
+                // Add copy buttons to code blocks
+                html = html.replace(/<pre><code class="language-([^"]+)">([\s\S]*?)<\/code><\/pre>/g, 
+                    (match, lang, code) => {
+                        const decodedCode = code.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+                        return `<pre><code class="language-${lang}">${code}</code><button class="copy-button" onclick="copyToClipboard(\`${decodedCode}\`)">Copy</button></pre>`;
+                    }
+                );
+                
+                return html;
+            } catch (error) {
+                console.error('Error formatting message:', error);
+                return content;
+            }
+        }
+
         function addMessage(content, isUser) {
-            const messagesDiv = document.getElementById('chat-messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isUser ? 'user' : ''}`;
-            messageDiv.innerHTML = `<div class="message-content">${content}</div>`;
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            try {
+                const messagesDiv = document.getElementById('chat-messages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${isUser ? 'user' : ''}`;
+                const formattedContent = isUser ? content : formatMessage(content);
+                messageDiv.innerHTML = `<div class="message-content">${formattedContent}</div>`;
+                messagesDiv.appendChild(messageDiv);
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                
+                // Re-run Prism highlighting on new content
+                if (!isUser) {
+                    Prism.highlightAllUnder(messageDiv);
+                }
+            } catch (error) {
+                console.error('Error adding message:', error);
+            }
         }
 
         function handleKeyPress(event) {
@@ -119,19 +226,20 @@
             
             if (message === '') return;
             
-            // Add user message to UI
-            addMessage(message, true);
-            
-            // Add to message history
-            messageHistory.push({
-                "role": "user",
-                "content": message
-            });
-            
-            // Clear input
-            input.value = '';
-            
             try {
+                // Add user message to UI
+                addMessage(message, true);
+                
+                // Add to message history
+                messageHistory.push({
+                    "role": "user",
+                    "content": message
+                });
+                
+                // Clear input
+                input.value = '';
+                let assistantMessage = '';
+                
                 const response = await fetch('/chat', {
                     method: 'POST',
                     headers: {
@@ -144,7 +252,6 @@
 
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-                let assistantMessage = '';
 
                 while (true) {
                     const {value, done} = await reader.read();
@@ -172,7 +279,8 @@
                                     // Update or add assistant message
                                     const assistantDiv = document.querySelector('.message:not(.user):last-child');
                                     if (assistantDiv) {
-                                        assistantDiv.querySelector('.message-content').textContent = assistantMessage;
+                                        assistantDiv.querySelector('.message-content').innerHTML = formatMessage(assistantMessage);
+                                        Prism.highlightAllUnder(assistantDiv);
                                     } else {
                                         addMessage(assistantMessage, false);
                                     }
