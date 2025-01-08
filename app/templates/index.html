@@ -180,11 +180,18 @@
                 // Convert markdown to HTML using marked
                 let html = marked.parse(content);
                 
-                // Add copy buttons to code blocks
+                // Add copy buttons to code blocks with unique IDs
+                let codeBlockId = 0;
                 html = html.replace(/<pre><code class="language-([^"]+)">([\s\S]*?)<\/code><\/pre>/g, 
                     (match, lang, code) => {
                         const decodedCode = code.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-                        return `<pre><code class="language-${lang}">${code}</code><button class="copy-button" onclick="copyToClipboard(\`${decodedCode}\`)">Copy</button></pre>`;
+                        const id = `code-block-${codeBlockId++}`;
+                        return `
+                            <div class="code-block-wrapper">
+                                <pre><code class="language-${lang}" id="${id}">${code}</code></pre>
+                                <button class="copy-button" onclick="copyCodeBlock('${id}')">Copy</button>
+                            </div>
+                        `;
                     }
                 );
                 
@@ -194,6 +201,60 @@
                 return content;
             }
         }
+
+        function copyCodeBlock(id) {
+            const codeElement = document.getElementById(id);
+            if (codeElement) {
+                const code = codeElement.textContent;
+                navigator.clipboard.writeText(code).then(() => {
+                    const button = event.target;
+                    const originalText = button.textContent;
+                    button.textContent = 'Copied!';
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy:', err);
+                });
+            }
+        }
+
+        // Update styles for code block wrapper
+        const styleSheet = document.createElement("style");
+        styleSheet.textContent = `
+            .code-block-wrapper {
+                position: relative;
+                margin: 0.5em 0;
+            }
+            .code-block-wrapper pre {
+                margin: 0;
+                padding: 12px;
+                border-radius: 8px;
+                background: #1e1e1e !important;
+                overflow-x: auto;
+            }
+            .code-block-wrapper .copy-button {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                padding: 4px 8px;
+                background: #3d3d3d;
+                border: none;
+                border-radius: 4px;
+                color: #fff;
+                font-size: 12px;
+                cursor: pointer;
+                opacity: 0;
+                transition: opacity 0.2s;
+            }
+            .code-block-wrapper:hover .copy-button {
+                opacity: 1;
+            }
+            .code-block-wrapper .copy-button:hover {
+                background: #4d4d4d;
+            }
+        `;
+        document.head.appendChild(styleSheet);
 
         function addMessage(content, isUser) {
             try {

@@ -45,4 +45,8 @@ def chat():
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=3000) 
+    # Get the port from environment variable or use default
+    port = int(os.getenv("PORT", 3000))
+    
+    # Run the app on all network interfaces
+    app.run(host='0.0.0.0', port=port, debug=False) 
